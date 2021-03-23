@@ -6,7 +6,7 @@
  * A receiver of a message waiting for someone
  * to send a message through the channel
  */
-type receiver = (value: any) => void;
+type receiver<T> = (value: T) => void;
 
 /**
  * A channel by which sequential processes can send
@@ -15,7 +15,7 @@ type receiver = (value: any) => void;
 export interface Channel<T> {
   bufferSize: number;
   values: T[];
-  receivers: receiver[];
+  receivers: Array<receiver<T>>;
 }
 
 /**
@@ -25,19 +25,23 @@ export type create = <T>(bufferSize?: number) => Channel<T>;
 
 export type receive = <T>(channel: Channel<T>) => Promise<T>;
 
-export type receiveStream = <T>(channel: Channel<T>) => AsyncIterableIterator<T>;
-
 export type send = <T>(channel: Channel<T>) => (value: T) => Promise<boolean>;
 
 /**
  * Implimentation
  */
 
-const channelBufferIsFull: <T>(channel: Channel<T>) => boolean = <T>(channel: Channel<T>) =>
-  !!(channel.bufferSize && channel.values.length > channel.bufferSize);
+const channelBufferIsFull: <T>(channel: Channel<T>) => boolean = <T>(
+  channel: Channel<T>
+) => !!(channel.bufferSize && channel.values.length > channel.bufferSize);
 
-const thereAreWaitingReceivers: <T>(channel: Channel<T>) => boolean =
-  <T>(channel: Channel<T>) => !!channel.receivers.length;
+const thereAreWaitingReceivers: <T>(channel: Channel<T>) => boolean = <T>(
+  channel: Channel<T>
+) => !!channel.receivers.length;
+
+const channelIsBuffered: <T>(channel: Channel<T>) => boolean = (
+  channel: Channel<T>
+) => channel.bufferSize !== 0;
 
 export const create: create = <T>(bufferSize: number = 0) => ({
   bufferSize,
@@ -46,20 +50,15 @@ export const create: create = <T>(bufferSize: number = 0) => ({
 });
 
 export const send: send = <T>(channel: Channel<T>) => async (value: T) => {
-  if (channelBufferIsFull(channel)) { return false; }
-
-  if (thereAreWaitingReceivers(channel)) {
-    const waitingReceiver = channel.receivers.shift() as receiver;
-    waitingReceiver(value);
-    return true;
+  if (channelIsBuffered(channel)) {
   }
 
-  channel.values.push(value);
-  return true;
+  await channel;
 };
 
-const channelHasABufferedValue: <T>(channel: Channel<T>) => boolean =
-  <T>(channel: Channel<T>) => !!channel.values.length;
+const channelHasABufferedValue: <T>(channel: Channel<T>) => boolean = <T>(
+  channel: Channel<T>
+) => !!channel.values.length;
 
 export const receive: receive = async <T>(channel: Channel<T>) => {
   if (channelHasABufferedValue(channel)) {
@@ -71,10 +70,3 @@ export const receive: receive = async <T>(channel: Channel<T>) => {
     channel.receivers.push(resolveWithValue);
   }) as Promise<T>;
 };
-
-export const receiveStream: receiveStream = <T>(channel: Channel<T>) => async function*() {
-  while (true) {
-    const nextValue = await receive(channel);
-    yield nextValue;
-  }
-}();
